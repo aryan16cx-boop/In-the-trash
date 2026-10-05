@@ -1,0 +1,747 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Pull Down to Tighten</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout concept: a phone-width stage; an SVG band pinned at the top two
+     corners sags toward a draggable handle. The handle's vertical position
+     (0 = resting near the top, 1 = dragged near the bottom) drives both the
+     band's curvature and a staggered reveal of placeholder tiles beneath it. */
+  :root{
+    --bg:#ffffff;
+    --ink:#0b1f33;
+    --ink-soft:#5b6b7a;
+    --band:#9fc1e0;
+    --band-line:#1a3250;
+    --surface:#ffffff;
+    --shadow-rgb:11,31,51;
+    --accent:#2f6fb3;
+    color-scheme:light;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:22px;
+    padding-block:28px;
+    min-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
+  }
+  .eyebrow{
+    font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+    font-size:11px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+  }
+  .stage{
+    position:relative;
+    width:min(400px,92vw);
+    height:min(700px,78vh);
+    background:var(--surface);
+    border:1px solid rgba(var(--shadow-rgb),0.08);
+    border-radius:22px;
+    box-shadow:0 2px 4px rgba(var(--shadow-rgb),0.05), 0 18px 40px -12px rgba(var(--shadow-rgb),0.22), 0 40px 70px -30px rgba(var(--shadow-rgb),0.2);
+    overflow:hidden;
+    touch-action:none;
+    user-select:none;
+  }
+  svg.band-layer{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    z-index:20;
+    pointer-events:none;
+    filter:drop-shadow(0 7px 7px rgba(var(--shadow-rgb),0.22));
+    overflow:visible;
+  }
+  .handle{
+    position:absolute;
+    left:50%;
+    top:0;
+    width:52px;
+    height:52px;
+    margin-left:-26px;
+    margin-top:-26px;
+    border-radius:50%;
+    background:var(--bg);
+    border:2px solid var(--ink);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:30;
+    cursor:grab;
+    box-shadow:0 2px 3px rgba(var(--shadow-rgb),0.18), 0 10px 18px -6px rgba(var(--shadow-rgb),0.38);
+    transition:transform 0.08s ease-out;
+  }
+  .handle:active{cursor:grabbing;}
+  .handle svg{display:block;}
+  .handle.tight{cursor:pointer;}
+
+  .grid{
+    position:absolute;
+    inset:0;
+    padding:92px 18px 18px;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:14px;
+    align-content:start;
+    z-index:10;
+  }
+  .tile{
+    --e:0;
+    aspect-ratio:1.3/1;
+    border-radius:12px;
+    border:none;
+    background:#ffffff;
+    position:relative;
+    overflow:hidden;
+    -webkit-backdrop-filter:blur(14px) saturate(1.4);
+    backdrop-filter:blur(14px) saturate(1.4);
+    opacity:0;
+    filter:blur(18px);
+    transform:translateY(26px) scale(0.86);
+    will-change:transform,opacity,filter;
+    box-shadow:
+      inset 0 0 0 1px rgba(var(--shadow-rgb),0.06),
+      0 1px 2px rgba(var(--shadow-rgb),calc(0.10*var(--e))),
+      0 6px 12px -4px rgba(var(--shadow-rgb),calc(0.14*var(--e))),
+      0 18px 30px -12px rgba(var(--shadow-rgb),calc(0.22*var(--e)));
+    transition:box-shadow 0.25s ease, background 0.2s ease;
+    display:flex;
+    flex-direction:column;
+    justify-content:flex-end;
+    gap:4px;
+    padding:11px;
+    text-align:left;
+    font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+    color:var(--ink);
+    cursor:default;
+  }
+  .tile.live{cursor:pointer;}
+  .tile.live:hover{
+    box-shadow:
+      inset 0 0 0 1px rgba(var(--shadow-rgb),0.1),
+      0 2px 3px rgba(var(--shadow-rgb),0.12),
+      0 10px 18px -4px rgba(var(--shadow-rgb),0.18),
+      0 26px 38px -14px rgba(var(--shadow-rgb),0.26);
+  }
+  .tile > *{position:relative;}
+  .tile:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .tile{ text-decoration:none; justify-content:space-between; gap:6px; }
+  .tile-bar{
+    display:flex;
+    align-items:center;
+    gap:5px;
+    min-width:0;
+    padding-bottom:6px;
+    border-bottom:1px solid rgba(var(--shadow-rgb),0.08);
+  }
+  .tile-bar i{
+    width:5px; height:5px; border-radius:50%;
+    background:var(--tint,var(--accent));
+    opacity:0.5;
+    flex:none;
+  }
+  .tile-url{
+    margin-left:3px;
+    font-size:9.5px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--tint,var(--accent));
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    min-width:0;
+  }
+  .tile-body{ display:flex; flex-direction:column; gap:3px; }
+  .tile-label{
+    font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+    font-size:11px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    font-weight:600;
+    line-height:1.25;
+    will-change:opacity,filter;
+  }
+  .tile-detail{
+    font-size:11px;
+    line-height:1.4;
+    color:var(--ink-soft);
+    margin:0;
+  }
+  /* Per-tile treatments. One family throughout; only weight, scale, case and
+     tracking change, borrowed from product-page labelling: a thin arrow after
+     the name, a large light line, or a tiny wide-tracked spec label. */
+  .tile .tile-label::after{ content:'\2192'; margin-left:0.6em; font-weight:300; letter-spacing:0; color:var(--ink-soft); opacity:0.7; }
+  .tile.v-light .tile-label{
+    font-size:16px;
+    font-weight:300;
+    letter-spacing:-0.02em;
+    text-transform:none;
+    line-height:1.15;
+  }
+  .tile.v-spec .tile-label{
+    font-size:9px;
+    font-weight:500;
+    letter-spacing:0.26em;
+    color:var(--ink-soft);
+  }
+  .tile.v-spec .tile-label::after{ content:none; }
+  .tile.v-spec .tile-detail{
+    font-size:13px;
+    font-weight:300;
+    line-height:1.3;
+    letter-spacing:-0.005em;
+    color:var(--ink);
+  }
+
+  /* The band from the book: a large strand and a smaller one beneath it */
+  .strands{
+    margin-top:auto;
+    margin-bottom:26px;
+    align-self:stretch;      /* full bleed: runs off both edges of the screen */
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    filter:drop-shadow(0 5px 6px rgba(var(--shadow-rgb),0.14));
+    opacity:0;               /* hidden until the bag has been opened and closed once */
+    transition:opacity 3.2s ease;
+    pointer-events:none;
+  }
+  .strands.show{ opacity:1; }
+  .strand{
+    background:var(--band);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+    display:flex;
+    align-items:center;
+    white-space:nowrap;
+    overflow:hidden;
+  }
+  .belt{
+    display:flex;
+    flex:none;
+    width:max-content;
+    animation:belt var(--belt-speed,80s) linear infinite;
+    will-change:transform;
+  }
+  .belt span{ flex:none; margin-right:var(--sp,0.7em); }
+  @keyframes belt{ to{ transform:translateX(-50%); } }
+  .strand-big{
+    height:clamp(16px,2.6vw,20px);
+    font-size:clamp(10px,1.9vw,13.5px);
+    font-weight:600;
+    letter-spacing:0.015em;
+    text-transform:uppercase;
+    --sp:0.7em;
+    --belt-speed:90s;
+  }
+  .strand-small{
+    height:clamp(9px,1.4vw,11px);
+    font-size:clamp(5px,0.85vw,6px);
+    font-weight:500;
+    letter-spacing:0.24em;
+    text-transform:uppercase;
+    --sp:3em;
+    --belt-speed:120s;
+  }
+  @media (prefers-reduced-motion:reduce){
+    .belt{ animation:none; }
+    .strands{ transition-duration:0.01s; }
+  }
+
+  /* The chute: paste your own internet trash into the bag */
+  .chute{
+    margin-top:20px;         /* clears the bag's drop shadow */
+    width:min(400px,92vw);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:10px;
+    font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+  }
+  .chute-label{
+    font-size:10px;
+    letter-spacing:0.18em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+  }
+  .chute-form{ display:flex; gap:8px; width:100%; }
+  .chute-input{
+    flex:1;
+    min-width:0;
+    height:42px;
+    border-radius:999px;
+    border:1px solid rgba(var(--shadow-rgb),0.1);
+    background:#fff;
+    padding:0 18px;
+    font-family:inherit;
+    font-size:16px;
+    color:var(--ink);
+    box-shadow:inset 0 1px 2px rgba(var(--shadow-rgb),0.06), 0 1px 2px rgba(var(--shadow-rgb),0.06), 0 10px 20px -10px rgba(var(--shadow-rgb),0.2);
+  }
+  .chute-input::placeholder{ color:var(--ink-soft); opacity:0.55; }
+  .chute-input:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .chute-btn{
+    height:42px;
+    border:2px solid var(--ink);
+    border-radius:999px;
+    padding:0 18px;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:inherit;
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    cursor:pointer;
+    box-shadow:0 2px 3px rgba(var(--shadow-rgb),0.18), 0 10px 18px -6px rgba(var(--shadow-rgb),0.38);
+    white-space:nowrap;
+  }
+  .chute-btn:active{ transform:translateY(1px); }
+  .chute-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .chute-row{
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    min-height:18px;
+    padding-inline:6px;
+  }
+  .chute-msg{ font-size:11px; color:var(--ink-soft); min-width:0; }
+  .chute-msg.err{ color:#b4412f; }
+  .chute-bin{
+    border:none;
+    background:none;
+    padding:0;
+    font-family:inherit;
+    font-size:10px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    text-decoration:underline;
+    text-underline-offset:3px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .chute-bin[hidden]{ display:none; }
+  .chute-bin:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .head{ display:flex; flex-direction:column; align-items:center; gap:5px; text-align:center; }
+  .caption{
+    font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display','Inter','Helvetica Neue',Arial,sans-serif;
+    font-size:10px;
+    letter-spacing:0.18em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    opacity:0.4;
+    position:absolute;
+    left:0;
+    right:0;
+    bottom:11px;
+    text-align:center;
+    z-index:5;
+    pointer-events:none;
+  }
+</style>
+
+<div class="head">
+  <div class="eyebrow">Pull down to tighten</div>
+</div>
+<div class="stage" id="stage">
+  <svg class="band-layer" id="bandLayer" viewBox="0 0 400 700" preserveAspectRatio="none">
+    <path id="bandFill" fill="none" stroke="var(--band)" stroke-width="16" stroke-linecap="round"/>
+    <path id="bandStitch" fill="none" stroke="var(--band-line)" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="1 9"/>
+  </svg>
+  <div class="caption">you may find treasure</div>
+  <div class="grid" id="grid"></div>
+  <button class="handle" id="handle" aria-label="Drag down to tighten, tap again to reset">
+    <svg width="16" height="10" viewBox="0 0 16 10" id="chev">
+      <path d="M1 1 L8 8 L15 1" fill="none" stroke="var(--ink)" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </button>
+</div>
+
+<section class="chute" aria-label="Add your own internet trash">
+  <div class="chute-label">Got your own? Chuck it in</div>
+  <form class="chute-form" id="chuteForm" autocomplete="off" novalidate>
+    <input class="chute-input" id="chuteInput" type="text" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="Paste a link" aria-label="Link to add to the bag">
+    <button class="chute-btn" type="submit">Chuck it</button>
+  </form>
+  <div class="chute-row">
+    <span class="chute-msg" id="chuteMsg" role="status" aria-live="polite"></span>
+    <button class="chute-bin" id="chuteBin" type="button" hidden>Empty bin</button>
+  </div>
+</section>
+
+<div class="strands" aria-hidden="true">
+  <div class="strand strand-big" id="strandBig"></div>
+  <div class="strand strand-small" id="strandSmall"></div>
+</div>
+
+<script>
+(function(){
+  var stage = document.getElementById('stage');
+  var handle = document.getElementById('handle');
+  var bandFill = document.getElementById('bandFill');
+  var bandStitch = document.getElementById('bandStitch');
+  var grid = document.getElementById('grid');
+  var caption = document.querySelector('.caption');
+
+  // Belt: fill half a loop wider than the screen, then double it so that
+  // sliding by exactly half is seamless.
+  function span(txt){ var n = document.createElement('span'); n.textContent = txt; return n; }
+  function fillBelt(el, makeItems){
+    el.textContent = '';
+    var belt = document.createElement('div');
+    belt.className = 'belt';
+    el.appendChild(belt);
+    var need = Math.max(window.innerWidth, 400) + 40, guard = 0;
+    while (belt.offsetWidth < need && guard++ < 120) makeItems().forEach(function(n){ belt.appendChild(n); });
+    Array.prototype.slice.call(belt.children).forEach(function(n){ belt.appendChild(n.cloneNode(true)); });
+  }
+  function buildTape(){
+    fillBelt(document.getElementById('strandBig'), function(){ return [span('In between'), span('\u2022')]; });
+    fillBelt(document.getElementById('strandSmall'), function(){ return [span("You're looking at light")]; });
+  }
+  buildTape();
+  window.addEventListener('resize', buildTape);
+
+  var VB_W = 400, VB_H = 700;
+  var ANCHOR_Y = 34;      // top corners the band is pinned to
+  var REST_Y = 64;        // handle y at progress 0
+  var TAUT_Y = 630;       // handle y at progress 1
+  var TILE_COUNT = 8;
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var state = { progress: 0, settle: 0 }; // progress: 0 loose → 1 taut. settle: 0 taut-visible → 1 docked/faded
+  var dragging = false;
+  var tight = false;
+  var everOpened = false;
+  var bandShown = false;
+  var anim = {}; // in-flight rAF ids keyed by state prop
+
+  // Real, odd corners of the web. [domain shown, url, title, one line].
+  // Eight are drawn at random each time the pile is made. Two of them
+  // (Random Wikipedia, Wiby) land somewhere new every time you open them.
+  var SITES = [
+    ['zombo.com', 'https://zombo.com', 'Zombo.com', 'Anything is possible. Music included.'],
+    ['theuselessweb.com', 'https://theuselessweb.com', 'The Useless Web', 'One button sends you to a random useless site.'],
+    ['pointerpointer.com', 'https://pointerpointer.com', 'Pointer Pointer', 'Move your cursor. Someone is pointing at it.'],
+    ['hackertyper.net', 'https://hackertyper.net', 'Hacker Typer', 'Mash the keys and look like a movie hacker.'],
+    ['cameronsworld.net', 'https://www.cameronsworld.net', 'Cameron\'s World', 'A museum of 1990s GeoCities pages.'],
+    ['windows93.net', 'https://www.windows93.net', 'Windows 93', 'A fake operating system with real chaos.'],
+    ['en.wikipedia.org', 'https://en.wikipedia.org/wiki/Special:Random', 'Random Wikipedia', 'Could be a moth. Could be a minor railway.'],
+    ['wiby.me', 'https://wiby.me/surprise', 'Wiby: Surprise Me', 'A random page from the old, small web.'],
+    ['spacejam.com/1996', 'https://www.spacejam.com/1996/', 'Space Jam, 1996', 'The original film site, untouched since.'],
+    ['lingscars.com', 'https://www.lingscars.com', 'Ling\'s Cars', 'A car dealer whose homepage is pure noise.'],
+    ['eelslap.com', 'https://eelslap.com', 'Eel Slap', 'Slap a man with an eel. That is the site.'],
+    ['cat-bounce.com', 'https://cat-bounce.com', 'Cat Bounce', 'A cat. It bounces.'],
+    ['thispersondoesnotexist.com', 'https://thispersondoesnotexist.com', 'This Person Does Not Exist', 'A new invented face on every refresh.'],
+    ['mapcrunch.com', 'https://www.mapcrunch.com', 'MapCrunch', 'Dropped at a random spot on Street View.'],
+    ['radio.garden', 'https://radio.garden', 'Radio Garden', 'Spin a globe, hear a live station.'],
+    ['koalastothemax.com', 'https://koalastothemax.com', 'Koalas to the Max', 'Click dots until a koala appears.'],
+    ['nyan.cat', 'https://www.nyan.cat', 'Nyan Cat', 'A rainbow cat in space. It does not stop.'],
+    ['rainymood.com', 'https://www.rainymood.com', 'Rainy Mood', 'Rain sounds. That is all.'],
+    ['neal.fun', 'https://neal.fun', 'Neal.fun', 'A shelf of weird little games and toys.']
+  ];
+
+  // Link and dot tints, readable on white. Re-dealt every time the pile is made.
+  var TINTS = ['#2f6fb3','#c4503f','#2d8a68','#7757c4','#a8650a','#bf3f7b','#1d8794','#5b6b7a'];
+
+  function pick(arr, n){
+    var pool = arr.slice(), out = [];
+    while (out.length < n && pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    return out;
+  }
+
+  // Tiles are real links: each one opens its site in a new tab.
+  var tiles = [];
+  var labels = [];
+  var urls = [];
+  var details = [];
+  var rots = [];
+  for (var k = 0; k < TILE_COUNT; k++) {
+    var t = document.createElement('a');
+    t.className = 'tile';
+    t.target = '_blank';
+    t.rel = 'noopener noreferrer';
+    t.tabIndex = -1; // unreachable until the pile is fully pulled in
+
+    var bar = document.createElement('div');
+    bar.className = 'tile-bar';
+    bar.innerHTML = '<i></i><i></i><i></i>';
+    var url = document.createElement('span');
+    url.className = 'tile-url';
+    bar.appendChild(url);
+
+    var body = document.createElement('div');
+    body.className = 'tile-body';
+    var label = document.createElement('span');
+    label.className = 'tile-label';
+    var detail = document.createElement('p');
+    detail.className = 'tile-detail';
+    body.appendChild(label);
+    body.appendChild(detail);
+
+    t.appendChild(bar);
+    t.appendChild(body);
+    grid.appendChild(t);
+    tiles.push(t);
+    labels.push(body);   // body fades in a beat after the tile
+    urls.push(url);
+    details.push(detail);
+    rots.push(0);
+  }
+
+  // ----- Your own trash: pasted links join the pile (kept in this browser only) -----
+  var STORE_KEY = 'pull-down-trash';
+  var userItems = [];
+  try { userItems = JSON.parse(localStorage.getItem(STORE_KEY) || '[]').filter(function(x){ return x && typeof x.href === 'string'; }); } catch(e){ userItems = []; }
+  function saveUser(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(userItems)); } catch(e){} }
+
+  function parseLink(raw){
+    raw = (raw || '').trim();
+    if (!raw) return null;
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(raw)) raw = 'https://' + raw;
+    var u;
+    try { u = new URL(raw); } catch(e){ return null; }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null; // no javascript:, data:, etc.
+    if (u.hostname.indexOf('.') === -1) return null;
+    return u;
+  }
+  function userToItem(x){
+    var shown = x.href.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+    return [x.host, x.href, 'Chucked in by you', shown];
+  }
+
+  var mine = [];
+  function applyItem(i, item, tint, isMine){
+    mine[i] = !!isMine;
+    tiles[i].href = item[1];
+    tiles[i].setAttribute('aria-label', item[2] + ', ' + item[0] + ' (opens in a new tab)');
+    urls[i].textContent = item[0];
+    tiles[i].style.setProperty('--tint', tint);
+    labels[i].querySelector('.tile-label').textContent = item[2];
+    details[i].textContent = item[3];
+    details[i].style.wordBreak = isMine ? 'break-all' : '';
+    // Mostly the house treatment; some tiles get the light or spec-label one.
+    tiles[i].classList.remove('v-light', 'v-spec');
+    var r = Math.random();
+    if (r > 0.75) tiles[i].classList.add('v-spec');
+    else if (r > 0.5) tiles[i].classList.add('v-light');
+    rots[i] = (Math.random() * 1.4 - 0.7);
+  }
+
+  // Re-roll the pile. Your own links always make the cut (up to a full bag);
+  // the rest of the bag is random sites, all dealt in a random order.
+  function shuffle(){
+    var own = pick(userItems, Math.min(userItems.length, TILE_COUNT)).map(function(x){ return { it: userToItem(x), mine: true }; });
+    var rest = pick(SITES, TILE_COUNT - own.length).map(function(x){ return { it: x, mine: false }; });
+    var all = pick(own.concat(rest), TILE_COUNT);
+    var tints = pick(TINTS, TILE_COUNT);
+    for (var i = 0; i < TILE_COUNT; i++) applyItem(i, all[i].it, tints[i], all[i].mine);
+  }
+  shuffle();
+
+  var chuteForm = document.getElementById('chuteForm');
+  var chuteInput = document.getElementById('chuteInput');
+  var chuteMsg = document.getElementById('chuteMsg');
+  var chuteBin = document.getElementById('chuteBin');
+
+  function say(text, isErr){
+    chuteMsg.textContent = text;
+    chuteMsg.classList.toggle('err', !!isErr);
+  }
+  function refreshBin(){
+    chuteBin.hidden = userItems.length === 0;
+    chuteBin.textContent = 'Empty bin (' + userItems.length + ')';
+  }
+  refreshBin();
+  if (userItems.length) say(userItems.length + ' of your own in the bin.');
+
+  chuteForm.addEventListener('submit', function(e){
+    e.preventDefault();
+    var u = parseLink(chuteInput.value);
+    if (!u) { say('That does not look like a link.', true); return; }
+    if (userItems.some(function(x){ return x.href === u.href; })) { say('Already in the bin.'); chuteInput.value = ''; return; }
+    userItems.push({ href: u.href, host: u.hostname.replace(/^www\./, '') });
+    if (userItems.length > 40) userItems.shift();
+    saveUser();
+    chuteInput.value = '';
+    refreshBin();
+    if (tight) {
+      // Bag is open: it lands straight in, replacing one of the random tiles.
+      var spots = [];
+      for (var i = 0; i < TILE_COUNT; i++) if (!mine[i]) spots.push(i);
+      if (!spots.length) for (var j = 0; j < TILE_COUNT; j++) spots.push(j);
+      var at = spots[Math.floor(Math.random() * spots.length)];
+      applyItem(at, userToItem(userItems[userItems.length - 1]), TINTS[Math.floor(Math.random() * TINTS.length)], true);
+      render();
+      tiles[at].animate(
+        [{ filter:'blur(14px)', opacity:0.1, offset:0 }, { filter:'blur(0px)', opacity:1, offset:1 }],
+        { duration: 520, easing:'cubic-bezier(.2,.7,.2,1)', fill:'backwards' }
+      );
+      say('Chucked in. Look for it in the bag.');
+    } else {
+      say('Chucked in. It will turn up next time you pull.');
+    }
+  });
+
+  chuteBin.addEventListener('click', function(){
+    userItems = [];
+    saveUser();
+    refreshBin();
+    say('Bin emptied. Gone from the next pull.');
+  });
+
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+  function lerp(a, b, t){ return a + (b - a) * t; }
+
+  function viewboxYFromClientY(clientY){
+    var rect = stage.getBoundingClientRect();
+    var ratio = (clientY - rect.top) / rect.height;
+    return ratio * VB_H;
+  }
+
+  function render(){
+    var progress = state.progress, settle = state.settle;
+    var handleY = lerp(REST_Y, TAUT_Y, progress);
+
+    // Band: pinned at top-left/top-right corners, dipping to the handle's
+    // drag position. Its shape always reflects the pull; only its opacity
+    // (below) recedes once the gesture has fully settled.
+    var d = 'M 0 ' + ANCHOR_Y + ' Q 200 ' + handleY + ' 400 ' + ANCHOR_Y;
+    bandFill.setAttribute('d', d);
+    bandStitch.setAttribute('d', d);
+    var bandOpacity = 1 - settle;
+    bandFill.style.opacity = bandOpacity;
+    bandStitch.style.opacity = bandOpacity;
+
+    // Handle: follows the drag while pulling, then glides back up to its
+    // resting spot (and flips 180°) as it settles, so nothing ever sits
+    // over the tiles once they're readable.
+    var rect = stage.getBoundingClientRect();
+    var dragPx = (handleY / VB_H) * rect.height;
+    var restPx = (REST_Y / VB_H) * rect.height;
+    var displayPx = lerp(dragPx, restPx, settle);
+    handle.style.transform = 'translateY(' + displayPx + 'px) rotate(' + (settle * 180) + 'deg)';
+
+    // Staggered tile reveal: tiles cascade in across the pull, clearing out
+    // of a blur as they settle, and blurring back out in reverse on reset.
+    for (var i = 0; i < tiles.length; i++) {
+      var start = (i / tiles.length) * 0.7;
+      var end = start + 0.4;
+      var raw = clamp((progress - start) / (end - start), 0, 1);
+      var local = 1 - Math.pow(1 - raw, 3);          // ease-out: surfaces quickly, then settles
+      var inv = 1 - local;
+      tiles[i].style.opacity = Math.min(1, local * 1.15);
+      tiles[i].style.filter = 'blur(' + (18 * inv * inv) + 'px)';
+      tiles[i].style.transform = 'translateY(' + (26 * inv) + 'px) scale(' + (0.86 + 0.14 * local) + ') rotate(' + (rots[i] * local) + 'deg)';
+      tiles[i].style.setProperty('--e', local.toFixed(3));
+      // label comes into focus a beat after its tile
+      var lab = clamp((local - 0.35) / 0.65, 0, 1);
+      labels[i].style.opacity = lab;
+      labels[i].style.filter = 'blur(' + (6 * (1 - lab)) + 'px)';
+    }
+
+    // The caption slips away as the first tiles surface
+    caption.style.opacity = 0.4 * (1 - clamp(progress / 0.22, 0, 1));
+
+    if (progress >= 0.999) everOpened = true;
+    if (everOpened && !bandShown && progress <= 0.001) {
+      bandShown = true;
+      document.querySelector('.strands').classList.add('show');
+    }
+
+    var nowTight = progress >= 0.999;
+    if (nowTight !== tight) {
+      tight = nowTight;
+      grid.style.pointerEvents = tight ? 'auto' : 'none';
+      handle.classList.toggle('tight', tight);
+      tiles.forEach(function(t){
+        t.classList.toggle('live', tight);
+        t.tabIndex = tight ? 0 : -1;
+      });
+      if (!tight && progress <= 0.001) shuffle();
+      handle.setAttribute('aria-label', tight ? 'Tap to reset' : 'Drag down to tighten');
+    }
+  }
+
+  function cancelAnim(key){
+    if (anim[key]) { cancelAnimationFrame(anim[key]); anim[key] = null; }
+  }
+
+  function animateValue(key, target, duration, onDone){
+    cancelAnim(key);
+    if (reduced) { state[key] = target; render(); if (onDone) onDone(); return; }
+    var startVal = state[key];
+    var startTime = null;
+    function step(ts){
+      if (startTime === null) startTime = ts;
+      var t = clamp((ts - startTime) / duration, 0, 1);
+      var eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      state[key] = lerp(startVal, target, eased);
+      render();
+      if (t < 1) { anim[key] = requestAnimationFrame(step); }
+      else { anim[key] = null; if (onDone) onDone(); }
+    }
+    anim[key] = requestAnimationFrame(step);
+  }
+
+  function onPointerDown(e){
+    if (tight) {
+      // Tap while tightened reverses the gesture: un-dock and fade the
+      // band back in, then spring the whole thing back open.
+      animateValue('settle', 0, 220, function(){
+        animateValue('progress', 0, 340);
+      });
+      return;
+    }
+    dragging = true;
+    cancelAnim('progress');
+    cancelAnim('settle');
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+
+  function onPointerMove(e){
+    if (!dragging) return;
+    var y = viewboxYFromClientY(e.clientY);
+    state.progress = clamp((y - REST_Y) / (TAUT_Y - REST_Y), 0, 1);
+    render();
+  }
+
+  function onPointerUp(e){
+    if (!dragging) return;
+    dragging = false;
+    try { handle.releasePointerCapture(e.pointerId); } catch(err){}
+    // Commit: past 60% snaps fully taut, then settles (docks + fades the
+    // band) once it's there. Short of that, it springs back loose.
+    if (state.progress > 0.6) {
+      animateValue('progress', 1, 320, function(){
+        animateValue('settle', 1, 380);
+      });
+    } else {
+      animateValue('progress', 0, 320);
+    }
+  }
+
+  handle.addEventListener('pointerdown', onPointerDown);
+  handle.addEventListener('pointermove', onPointerMove);
+  handle.addEventListener('pointerup', onPointerUp);
+  handle.addEventListener('pointercancel', onPointerUp);
+
+  window.addEventListener('resize', render);
+
+  render();
+})();
+</script>
+
+</body></html>
